@@ -1,0 +1,193 @@
+"use client"
+
+import { useState, useRef, useEffect } from "react"
+import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { RefreshCw, Download } from "lucide-react"
+import { SubtitleSelector } from "@/components/subtitle-selector"
+import { getUserPreferences } from "@/lib/storage"
+
+interface VideoPlayerProps {
+  sources: Array<{ url: string; type: string; label: string }>
+  title: string
+  posterPath?: string
+  mediaType?: "movie" | "tv"
+  tmdbId?: number
+  season?: number
+  episode?: number
+  hasNextEpisode?: boolean
+  hasPreviousEpisode?: boolean
+  nextEpisodeUrl?: string
+  previousEpisodeUrl?: string
+}
+
+export function VideoPlayerNew({
+  sources,
+  title,
+  posterPath,
+  mediaType,
+  tmdbId,
+  season,
+  episode,
+  hasNextEpisode,
+  nextEpisodeUrl,
+}: VideoPlayerProps) {
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+  const [activeSource, setActiveSource] = useState(0)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState(false)
+  const [retryCount, setRetryCount] = useState(0)
+
+  // Set default source from user preferences on mount
+  useEffect(() => {
+    try {
+      const prefs = getUserPreferences()
+      const defaultServerLabel = prefs.defaultServer?.toLowerCase() || "vidsrc"
+      const defaultSourceIndex = sources.findIndex((source) =>
+        source.label.toLowerCase().includes(defaultServerLabel)
+      )
+      if (defaultSourceIndex !== -1) {
+        setActiveSource(defaultSourceIndex)
+      }
+    } catch (error) {
+      // Fallback to first source if preferences fail
+      setActiveSource(0)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (error && retryCount < sources.length - 1) {
+      const timer = setTimeout(() => {
+        setActiveSource((prev) => (prev + 1) % sources.length)
+        setError(false)
+        setRetryCount((prev) => prev + 1)
+        setIsLoading(true)
+      }, 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [error, retryCount, sources.length])
+
+  useEffect(() => {
+    if (hasNextEpisode && nextEpisodeUrl) {
+      const handleAutoNext = () => {
+        window.location.href = nextEpisodeUrl
+      }
+      // Listen for video end events (if accessible)
+      window.addEventListener("videoended", handleAutoNext)
+      return () => window.removeEventListener("videoended", handleAutoNext)
+    }
+  }, [hasNextEpisode, nextEpisodeUrl])
+
+  const handleIframeLoad = () => {
+    setIsLoading(false)
+    setError(false)
+  }
+
+  const handleIframeError = () => {
+    setIsLoading(false)
+    setError(true)
+  }
+
+  const handleSecureDownload = async () => {
+    try {
+      const currentSource = sources[activeSource]
+      const downloadUrl = currentSource.url
+
+      // Open in new tab for user to download from the source
+      window.open(downloadUrl, "_blank")
+    } catch (error) {
+      // Silently fail
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card className="border-border/50 bg-card/50 backdrop-blur">
+        <CardContent className="p-0">
+          <div className="relative aspect-video w-full bg-black">
+            {isLoading && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-10">
+                <div className="flex flex-col items-center gap-2">
+                  <RefreshCw className="h-8 w-8 animate-spin text-primary" />
+                  <p className="text-sm text-muted-foreground">Loading video...</p>
+                </div>
+              </div>
+            )}
+            {error && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-10">
+                <div className="flex flex-col items-center gap-2 text-center p-4">
+                  <p className="text-sm text-red-500">Failed to load. Switching mirrors...</p>
+                  <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+                    Retry
+                  </Button>
+                </div>
+              </div>
+            )}
+            <iframe
+              ref={iframeRef}
+              key={`${activeSource}-${retryCount}`}
+              src={sources[activeSource]?.url}
+              className="w-full h-full"
+              allowFullScreen={true}
+              allow={"accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"}
+              title="Video Player"
+              onLoad={handleIframeLoad}
+              onError={handleIframeError}
+            />
+          </div>
+
+          <div className="p-3 sm:p-4 border-t border-border/50 space-y-3">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="space-y-2 flex-1">
+                <span className="text-xs sm:text-sm font-medium block">Source:</span>
+                <div className="flex flex-wrap gap-2">
+                  {sources.map((source, index) => (
+                    <Button
+                      key={index}
+                      size="sm"
+                      variant={activeSource === index ? "default" : "outline"}
+                      onClick={() => {
+                        setActiveSource(index)
+                        setRetryCount(0)
+                        setError(false)
+                        setIsLoading(true)
+                      }}
+                      className="text-xs touch-manipulation"
+                    >
+                      {source.label}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleSecureDownload}
+                className="gap-2 touch-manipulation bg-transparent"
+              >
+                <Download className="h-4 w-4" />
+                <span className="hidden sm:inline">Download</span>
+              </Button>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Badge variant="secondary" className="text-xs">
+                Source {activeSource + 1}/{sources.length}
+              </Badge>
+              {retryCount > 0 && (
+                <Badge variant="outline" className="text-xs">
+                  Retry {retryCount}
+                </Badge>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Subtitle Selector */}
+      {mediaType && tmdbId && (
+        <SubtitleSelector mediaType={mediaType} tmdbId={tmdbId} season={season} episode={episode} />
+      )}
+    </div>
+  )
+}
