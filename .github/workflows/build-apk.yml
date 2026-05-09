@@ -39,10 +39,10 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: 'pnpm'
 
-      - name: Enable Corepack and prepare pnpm
+      - name: Enable Corepack and ensure pnpm is available
         run: |
           corepack enable
-          corepack prepare pnpm@8.8.0 --activate
+          corepack prepare pnpm@8.8.0 --activate || npm install -g pnpm@8.8.0
 
       - name: Verify pnpm
         run: pnpm --version
