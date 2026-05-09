@@ -69,10 +69,19 @@ jobs:
       - name: Create Capacitor project
         run: |
           npm install -g @capacitor/cli
-          npx cap init "Fountain Home" --web-dir=.next/standalone
+          # Provide an application id (package id) required by `cap init`
+          npx cap init "Fountain Home" com.fountainstream.app --web-dir=.next/standalone
 
       - name: Add Android platform
         run: npx cap add android
+
+      - name: Copy web assets to native projects
+        run: |
+          # Ensure the built Next.js standalone output is copied into the native project
+          npx cap copy
+
+      - name: Ensure gradlew is executable
+        run: chmod +x android/gradlew
 
       - name: Configure Android signing
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -80,18 +89,22 @@ jobs:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
         run: |
           mkdir -p android/app
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/build.keystore
-          cat > android/local.properties << EOF
-          org.gradle.jvmargs=-Xmx1024m
-          android.enableJetifier=true
+          # Create a local.properties with the SDK path and sensible gradle JVM args
+          cat > android/local.properties <<-EOF
+          sdk.dir=${{ env.ANDROID_SDK_ROOT }}
+          org.gradle.jvmargs=-Xmx2048m
           EOF
 
       - name: Build APK (Debug)
         if: github.event.inputs.release_type == 'debug' || github.event_name != 'workflow_dispatch'
         working-directory: android
-        run: ./gradlew assembleDebug
+        run: |
+          ./gradlew clean
+          ./gradlew assembleDebug
 
       - name: Build APK (Release)
         if: github.event.inputs.release_type == 'release'
@@ -100,6 +113,7 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          ./gradlew clean
           ./gradlew bundleRelease \
             -Pandroid.injected.signing.store.file=app/build.keystore \
             -Pandroid.injected.signing.store.password=$ANDROID_KEYSTORE_PASSWORD \
