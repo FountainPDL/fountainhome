@@ -37,19 +37,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'pnpm'
 
-      - name: Install pnpm
-        run: npm install -g pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Install dependencies (npm)
+        run: npm install
 
       - name: Run linter
-        run: pnpm run lint --max-warnings 0 || true
+        run: npm run lint --max-warnings 0 || true
 
-      - name: Build Next.js
-        run: pnpm run build
+      - name: Build web (Vite)
+        run: npm run build
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
 
@@ -66,13 +62,35 @@ jobs:
           api-level: 35
           build-tools-version: '35.0.0'
 
-      - name: Create Capacitor project
+      - name: Install Capacitor CLI (fallback)
         run: |
-          npm install -g @capacitor/cli
-          npx cap init "Fountain Home" --web-dir=.next/standalone
+          # prefer local npx, but install global CLI as fallback to avoid failures
+          npm install -g @capacitor/cli@5 || true
 
-      - name: Add Android platform
-        run: npx cap add android
+      - name: Create Capacitor project (if needed)
+        run: |
+          # Initialize capacitor config only if missing; set web-dir to Vite output (dist)
+          if [ ! -f capacitor.config.json ]; then
+            npx cap init "Fountain Home" com.fountainstream.app --web-dir=dist
+          else
+            echo "capacitor.config.json already exists; skipping cap init"
+          fi
+
+      - name: Add Android platform (if needed)
+        run: |
+          if [ ! -d android ]; then
+            npx cap add android
+          else
+            echo "android platform already present; skipping cap add"
+          fi
+
+      - name: Copy web assets to native projects
+        run: |
+          # Ensure the built Vite output (dist) is copied into the native Android project
+          npx cap copy android
+
+      - name: Ensure gradlew is executable
+        run: chmod +x android/gradlew || true
 
       - name: Configure Android signing
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -80,18 +98,22 @@ jobs:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_SDK_ROOT }}
         run: |
           mkdir -p android/app
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/build.keystore
-          cat > android/local.properties << EOF
-          org.gradle.jvmargs=-Xmx1024m
-          android.enableJetifier=true
+          # Create a local.properties with the SDK path and sensible gradle JVM args
+          cat > android/local.properties <<-EOF
+          sdk.dir=${{ env.ANDROID_SDK_ROOT }}
+          org.gradle.jvmargs=-Xmx2048m
           EOF
 
       - name: Build APK (Debug)
         if: github.event.inputs.release_type == 'debug' || github.event_name != 'workflow_dispatch'
         working-directory: android
-        run: ./gradlew assembleDebug
+        run: |
+          ./gradlew clean
+          ./gradlew assembleDebug
 
       - name: Build APK (Release)
         if: github.event.inputs.release_type == 'release'
@@ -100,6 +122,7 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          ./gradlew clean
           ./gradlew bundleRelease \
             -Pandroid.injected.signing.store.file=app/build.keystore \
             -Pandroid.injected.signing.store.password=$ANDROID_KEYSTORE_PASSWORD \
