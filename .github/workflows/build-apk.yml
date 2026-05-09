@@ -53,7 +53,7 @@ jobs:
       - name: Run linter
         run: pnpm run lint --max-warnings 0 || true
 
-      - name: Build Next.js
+      - name: Build web (Vite)
         run: pnpm run build
         env:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
@@ -71,22 +71,35 @@ jobs:
           api-level: 35
           build-tools-version: '35.0.0'
 
-      - name: Create Capacitor project
+      - name: Install Capacitor CLI (fallback)
         run: |
-          npm install -g @capacitor/cli
-          # Provide an application id (package id) required by `cap init`
-          npx cap init "Fountain Home" com.fountainstream.app --web-dir=.next/standalone
+          # prefer local npx, but install global CLI as fallback to avoid failures
+          npm install -g @capacitor/cli@5 || true
 
-      - name: Add Android platform
-        run: npx cap add android
+      - name: Create Capacitor project (if needed)
+        run: |
+          # Initialize capacitor config only if missing; set web-dir to Vite output (dist)
+          if [ ! -f capacitor.config.json ]; then
+            npx cap init "Fountain Home" com.fountainstream.app --web-dir=dist
+          else
+            echo "capacitor.config.json already exists; skipping cap init"
+          fi
+
+      - name: Add Android platform (if needed)
+        run: |
+          if [ ! -d android ]; then
+            npx cap add android
+          else
+            echo "android platform already present; skipping cap add"
+          fi
 
       - name: Copy web assets to native projects
         run: |
-          # Ensure the built Next.js standalone output is copied into the native project
-          npx cap copy
+          # Ensure the built Vite output (dist) is copied into the native Android project
+          npx cap copy android
 
       - name: Ensure gradlew is executable
-        run: chmod +x android/gradlew
+        run: chmod +x android/gradlew || true
 
       - name: Configure Android signing
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
