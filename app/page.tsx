@@ -1,52 +1,22 @@
-import type { Viewport } from "next"
-import { HeroBanner } from "@/components/hero-banner"
-import { CategoryTabs } from "@/components/category-tabs"
-import { ContinueWatching } from "@/components/continue-watching"
-import { getPopular, getLatest, getMovies, getTVShows, getAnime, getPowerRangers } from "@/lib/tmdb"
+"use client";
 
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  maximumScale: 1,
-}
+import { useEffect, useState } from "react";
 
-export default async function HomePage() {
-  let popular, latest, movies, tvShows, anime, powerRangers
+export default function Page() {
+  const [data, setData] = useState(null);
 
-  try {
-    // Fetch all categories in parallel
-    ;[popular, latest, movies, tvShows, anime, powerRangers] = await Promise.all([
-      getPopular(),
-      getLatest(),
-      getMovies(),
-      getTVShows(),
-      getAnime(),
-      getPowerRangers(),
-    ])
-  } catch (error) {
-    // Provide empty arrays as fallback
-    popular = []
-    latest = []
-    movies = []
-    tvShows = []
-    anime = []
-    powerRangers = []
-  }
+  useEffect(() => {
+    fetch("/bible/kjv-ot.json") // adjust path if needed
+      .then((res) => res.json())
+      .then(setData)
+      .catch(() => setData("error"));
+  }, []);
 
   return (
-    <div className="min-h-screen">
-      {popular.length > 0 && <HeroBanner movies={popular.slice(0, 5)} />}
-      <div className="container px-4 py-8">
-        <ContinueWatching />
-      </div>
-      <CategoryTabs
-        popular={popular}
-        latest={latest}
-        movies={movies}
-        tvShows={tvShows}
-        anime={anime}
-        powerRangers={powerRangers}
-      />
+    <div>
+      {data === null && <p>Loading...</p>}
+      {data === "error" && <p>Error loading data</p>}
+      {data && <pre>{JSON.stringify(data.slice(0, 5), null, 2)}</pre>}
     </div>
-  )
+  );
 }

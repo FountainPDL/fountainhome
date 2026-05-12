@@ -1,0 +1,6 @@
+{
+  "appId": "com.fountain.home",
+  "appName": "FountainHome",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}

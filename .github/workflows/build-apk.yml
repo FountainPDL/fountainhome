@@ -1,147 +1,51 @@
-name: Build APK
+name: Build Android APK
 
 on:
   push:
     branches:
       - main
-      - develop
-  pull_request:
-    branches:
-      - main
+      - fix/ci-build-apk
   workflow_dispatch:
-    inputs:
-      release_type:
-        description: 'Release type'
-        required: true
-        default: 'debug'
-        type: choice
-        options:
-          - debug
-          - release
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    
-    strategy:
-      matrix:
-        node-version: [20.x]
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Set up Node.js
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
-          cache: 'pnpm'
-
-      - name: Install pnpm
-        run: npm install -g pnpm
+          node-version: 20
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: npm install
 
-      - name: Run linter
-        run: pnpm run lint --max-warnings 0 || true
+      # 🔥 BUILD VITE APP
+      - name: Build web app
+        run: npm run build
 
-      - name: Build Next.js
-        run: pnpm run build
-        env:
-          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
-
-      - name: Set up JDK
+      # ⚡ Setup Java for Android build
+      - name: Setup JDK
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
           distribution: 'temurin'
-          cache: gradle
+          java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          api-level: 35
-          build-tools-version: '35.0.0'
+      # ⚡ Capacitor sync
+      - name: Sync Capacitor
+        run: npx cap sync android
 
-      - name: Create Capacitor project
-        run: |
-          npm install -g @capacitor/cli
-          npx cap init "Fountain Home" --web-dir=.next/standalone
-
-      - name: Add Android platform
-        run: npx cap add android
-
-      - name: Configure Android signing
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          mkdir -p android/app
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/app/build.keystore
-          cat > android/local.properties << EOF
-          org.gradle.jvmargs=-Xmx1024m
-          android.enableJetifier=true
-          EOF
-
-      - name: Build APK (Debug)
-        if: github.event.inputs.release_type == 'debug' || github.event_name != 'workflow_dispatch'
+      # 🔨 Build APK
+      - name: Build APK
         working-directory: android
         run: ./gradlew assembleDebug
 
-      - name: Build APK (Release)
-        if: github.event.inputs.release_type == 'release'
-        working-directory: android
-        env:
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          ./gradlew bundleRelease \
-            -Pandroid.injected.signing.store.file=app/build.keystore \
-            -Pandroid.injected.signing.store.password=$ANDROID_KEYSTORE_PASSWORD \
-            -Pandroid.injected.signing.key.alias=fountain_app \
-            -Pandroid.injected.signing.key.password=$ANDROID_KEY_PASSWORD
-
-      - name: Upload APK artifact (Debug)
-        if: success() && (github.event.inputs.release_type == 'debug' || github.event_name != 'workflow_dispatch')
+      # 📦 Upload APK
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: fountain-home-debug-apk
-          path: android/app/build/outputs/apk/debug/*.apk
-          retention-days: 30
-
-      - name: Upload Bundle artifact (Release)
-        if: success() && github.event.inputs.release_type == 'release'
-        uses: actions/upload-artifact@v4
-        with:
-          name: fountain-home-release-bundle
-          path: android/app/build/outputs/bundle/release/*.aab
-          retention-days: 30
-
-      - name: Create Release
-        if: success() && github.event.inputs.release_type == 'release'
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: v${{ github.run_number }}
-          release_name: Release v${{ github.run_number }}
-          body: |
-            APK Build: ${{ github.run_number }}
-            Commit: ${{ github.sha }}
-          draft: false
-          prerelease: false
-
-      - name: Upload to Play Store (Optional)
-        if: false  # Set to true with proper credentials
-        uses: r0adkll/upload-google-play@v1
-        with:
-          serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_KEY }}
-          packageName: com.fountainstream.app
-          releaseFiles: 'android/app/build/outputs/bundle/release/*.aab'
-          track: internal
-          status: inProgress
+          name: app-debug.apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
