@@ -20,7 +20,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci --ignore-scripts
 
       - name: Build web app (Next.js)
         run: npm run build
@@ -34,12 +34,12 @@ jobs:
       - name: Setup Capacitor Android
         run: |
           npm install -g @capacitor/cli
-          npx cap init --web-dir .next/standalone || echo "Capacitor already initialized"
+          npx cap init --web-dir .next/standalone || echo "Cap already initialized"
           npx cap add android || echo "Android platform already exists"
           npx cap sync android
 
       - name: Build Debug APK
-        working-directory: ./android
+        working-directory: android
         run: ./gradlew assembleDebug
 
       - name: Upload APK
