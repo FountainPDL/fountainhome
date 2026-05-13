@@ -35,7 +35,7 @@ jobs:
         run: |
           npm install -g @capacitor/cli
           npx cap init --web-dir .next/standalone || echo "Cap already initialized"
-          npx cap add android || echo "Android already added"
+          npx cap add android || echo "Android platform already exists"
           npx cap sync android
 
       - name: Build Debug APK
