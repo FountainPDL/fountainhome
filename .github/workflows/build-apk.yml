@@ -16,7 +16,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 10   # or latest / 9 / auto from package.json
+          version: latest
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -25,9 +25,9 @@ jobs:
           cache: 'pnpm'
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile=false   # Allow lockfile regeneration first time
 
-      - name: Build web app (Vite)
+      - name: Build web app (Next.js)
         run: pnpm run build
 
       - name: Setup JDK 17
@@ -36,19 +36,18 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Initialize & Sync Capacitor Android
+      - name: Initialize & Sync Capacitor
         run: |
-          npm install -g @capacitor/cli
-          npx cap init --web-dir dist --npm-client pnpm || echo "Capacitor already initialized"
-          npx cap add android || echo "Android platform already exists"
+          npx cap init --web-dir .next/standalone || echo "Cap already initialized"
+          npx cap add android || echo "Android platform exists"
           npx cap sync android
 
       - name: Build Debug APK
         working-directory: ./android
         run: ./gradlew assembleDebug
 
-      - name: Upload APK Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: fountainhome-debug-apk
+          name: fountainhome-debug.apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
